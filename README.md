@@ -1,80 +1,307 @@
-# Agent Education Template
+# 화장품 성분 상담 AI 에이전트
 
-FastAPI 기반의 LangChain v1.0 에이전트 교육용 템플릿입니다.
+LangChain + LangGraph 기반의 **화장품 성분 전문 AI 에이전트** 서버입니다.
+ReAct(Reasoning and Acting) 패턴을 활용하여 사용자의 화장품 성분 관련 질문에 대해 도구(Tool)를 자율적으로 선택하고 실행합니다.
+
+식약처 공공데이터포털 REST API를 통해 화장품 원료성분정보와 사용제한 원료정보를 실시간으로 조회합니다.
 
 ## 기술 스택
 
-- FastAPI
-- LangChain v1.0
-- OpenAI (GPT-4)
-- uv (패키지 관리)
+| 분류 | 기술 |
+|------|------|
+| **Backend Framework** | FastAPI 0.104+ |
+| **Agent Framework** | LangChain v1.2 (`create_agent`, `middleware`) |
+| **LLM** | OpenAI GPT-4.1 (`langchain-openai`) |
+| **외부 API** | 공공데이터포털 REST API (2개 서비스) |
+| **HTTP Client** | httpx |
+| **설정 관리** | pydantic-settings (`.env` 기반) |
+| **패키지 관리** | uv |
+| **Python** | 3.11 ~ 3.13 |
 
-## 환경 준비 및 설치 가이드 (교육생용)
+## 아키텍처
 
-본 에이전트 프로젝트는 파이썬 패키지 매니저로 **`uv`**를 사용합니다. 아래 절차에 따라 실습 환경을 구성해 주세요.
+```
+┌─────────────┐     SSE Stream      ┌──────────────────────┐
+│  React UI   │ ◄──────────────────► │  FastAPI Server      │
+│ (port 5173) │   POST /api/v1/chat  │  (port 8000)         │
+└─────────────┘                      │                      │
+                                     │  ┌────────────────┐  │
+                                     │  │ AgentService    │  │
+                                     │  │ (SSE 스트리밍)   │  │
+                                     │  └───────┬────────┘  │
+                                     │          │           │
+                                     │  ┌───────▼────────┐  │
+                                     │  │ ReAct Agent     │  │
+                                     │  │ (create_agent)  │  │
+                                     │  │                 │  │
+                                     │  │ ┌─────────────┐ │  │
+                                     │  │ │ GPT-4.1 LLM │ │  │
+                                     │  │ └──────┬──────┘ │  │
+                                     │  │        │        │  │
+                                     │  │  ┌─────▼─────┐  │  │
+                                     │  │  │ Middleware │  │  │
+                                     │  │  │ (에러 처리) │  │  │
+                                     │  │  └─────┬─────┘  │  │
+                                     │  │        │        │  │
+                                     │  │   Tool 선택/실행  │  │
+                                     │  └────┬───────┬───┘  │
+                                     └───────┼───────┼──────┘
+                                             │       │
+                                    ┌────────▼┐  ┌──▼──────────┐
+                                    │ 원료성분  │  │ 사용제한     │
+                                    │ 정보 API │  │ 원료정보 API │
+                                    └─────────┘  └─────────────┘
+                                        식약처 공공데이터포털
+```
+
+### 요청-응답 흐름
+
+1. 사용자가 React UI에서 메시지를 전송합니다.
+2. `POST /api/v1/chat`으로 `{ thread_id, message }` 형태의 요청이 전달됩니다.
+3. `AgentService`가 모듈 수준 싱글턴 에이전트를 사용하여 `astream(stream_mode="updates")`으로 스트리밍을 시작합니다.
+4. 에이전트는 LLM이 판단한 도구를 실행하고, 각 단계를 SSE(Server-Sent Events)로 실시간 전달합니다.
+5. 도구 실행 중 예외가 발생하면 `@wrap_tool_call` middleware가 잡아서 ToolMessage로 변환하여 대화가 깨지지 않도록 합니다.
+6. 최종 응답이 생성되면 `"step": "done"` 이벤트로 전달됩니다.
+
+### SSE 스트림 이벤트 포맷
+
+```jsonc
+// 1) 도구 호출 시작
+{"step": "model", "tool_calls": ["search_ingredient"]}
+
+// 2) 도구 실행 결과
+{"step": "tools", "name": "search_ingredient", "content": "...검색 결과..."}
+
+// 3) 최종 응답
+{"step": "done", "message_id": "uuid", "role": "assistant", "content": "답변 내용", "metadata": {}, "created_at": "..."}
+```
+
+## Middleware — 도구 에러 처리
+
+`create_agent`의 `middleware` 파라미터를 활용하여 모든 도구의 예외를 일괄 처리합니다.
+
+### 왜 필요한가?
+
+`create_agent` 내부의 ToolNode는 도구 실행 예외를 기본적으로 다시 raise합니다. 예외가 처리되지 않으면:
+
+1. `tool_call`에 대한 `ToolMessage`가 생성되지 않음
+2. 다음 LLM 호출 시 OpenAI가 "tool_call_id에 대한 응답이 없다"고 거부
+3. 해당 thread의 대화가 완전히 깨짐
+
+`@wrap_tool_call` middleware가 예외를 잡아 `ToolMessage`로 변환하여 대화 흐름을 유지합니다.
+
+### 에러 분류 기준
+
+| 에러 유형 | 사용자 메시지 | 사용자 행동 |
+|----------|-------------|-----------|
+| `httpx.TimeoutException` | 응답 시간 초과 | 재시도 |
+| `httpx.NetworkError` | 서비스 연결 불가 | 대기 |
+| 기타 `Exception` | 일반 오류 | - |
+
+## 에이전트 도구 (Tools)
+
+에이전트는 사용자 질문을 분석하여 아래 2개 도구 중 적절한 것을 자동으로 선택합니다.
+
+### Tool 1: `search_ingredient` — 원료성분정보 조회
+
+| 항목 | 내용 |
+|------|------|
+| **데이터 출처** | 식품의약품안전처_화장품 원료성분정보 API |
+| **입력** | `ingredient_name`: 성분명 (예: `"나이아신아마이드"`, `"레티놀"`, `"히알루론산"`) |
+| **출력** | 표준명, 영문명, CAS번호, 기원 및 정의, 이명 (최대 5건) |
+| **용도** | "이 성분이 뭐야?", "어떤 효과가 있어?" 등 성분 기본 정보 질문 |
+
+### Tool 2: `search_restricted_ingredient` — 사용제한 원료정보 조회
+
+| 항목 | 내용 |
+|------|------|
+| **데이터 출처** | 식품의약품안전처_화장품 사용제한 원료정보 API |
+| **입력** | `ingredient_name`: 성분명 (예: `"하이드로퀴논"`, `"파라벤"`) |
+| **출력** | 규제 구분(금지/제한), 표준명, 영문명, 고시원료명, 제한사항, 단서조항, 배합제한국가 |
+| **용도** | "이 성분 써도 돼?", "안전한 성분이야?" 등 안전성 질문 |
+
+### 성분 존재 여부 검증
+
+안전성 질문이 들어와도 에이전트는 `search_ingredient`를 먼저 호출하여 해당 성분이 실제 등록된 화장품 원료인지 확인합니다. 등록되지 않은 성분이면 사용제한 목록에 없더라도 "안전하다"고 답변하지 않습니다.
+
+## 환경 준비 및 설치
 
 ### 1. 사전 요구사항
-* Python 3.11 이상 3.13 이하 버전을 권장합니다.
-* `uv` 패키지 매니저 설치:
+
+- Python 3.11 이상 3.13 이하
+- `uv` 패키지 매니저:
   ```bash
   # macOS / Linux / Windows (WSL)
   curl -LsSf https://astral.sh/uv/install.sh | sh
   ```
 
-### 2. 프로젝트 의존성 설치
-프로젝트 폴더(`agent`)로 이동한 뒤, 아래 명령어를 실행하여 가상환경 세팅 및 관련 패키지 설치를 진행합니다.
+### 2. 의존성 설치
 
 ```bash
-# 파이썬 의존성 동기화 및 가상환경(.venv) 자동 생성
+cd ai-agent
 uv sync
 ```
-* 명령어가 정상적으로 완료되면 프로젝트 디렉토리 내에 `.venv` 폴더가 생성됩니다.
+
+실행 후 프로젝트 디렉토리에 `.venv` 폴더가 생성됩니다.
 
 ### 3. 환경 변수 설정
-에이전트 구동을 위해 필요한 API 키 등을 설정해야 합니다.
-
-1. 프로젝트 루트 경로의 `env.sample` 파일을 복사하여 `.env` 파일을 생성합니다.
-   ```bash
-   cp env.sample .env
-   ```
-2. 생성된 `.env` 파일을 열고, 아래와 같이 본인의 **OpenAI API Key**를 입력합니다.
-   ```env
-   OPENAI_API_KEY=your_openai_api_key_here
-   OPENAI_MODEL=gpt-4o  # 또는 gpt-4
-   ```
-
-### 4. 개발 서버 실행
-
-환경변수 세팅까지 끝났다면 가상 환경 내에서 서버를 구동합니다.
 
 ```bash
-# uvicorn 서버 실행
+cp env.sample .env
+```
+
+`.env` 파일을 열고 아래 항목을 설정합니다:
+
+```env
+# API 라우트 prefix
+API_V1_PREFIX=/api/v1
+
+# CORS 허용 Origin (React UI 주소)
+CORS_ORIGINS=["http://localhost:3000", "http://localhost:5173"]
+
+# =====================================================
+# OpenAI 설정
+# =====================================================
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-4.1
+
+# =====================================================
+# 공공데이터포털 API 키
+# https://www.data.go.kr 에서 아래 2개 서비스 활용 신청 후 발급
+# - 식품의약품안전처_화장품 원료성분정보
+# - 식품의약품안전처_화장품 사용제한 원료정보
+# =====================================================
+PUBLIC_DATA_API_KEY=your_api_key
+
+# DeepAgents 설정
+DEEPAGENT_RECURSION_LIMIT=20
+```
+
+### 4. 공공데이터포털 API 키 발급 방법
+
+1. [공공데이터포털](https://www.data.go.kr) 회원가입 및 로그인
+2. 아래 2개 API 서비스를 각각 검색하여 **활용 신청**
+   - [식품의약품안전처_화장품 원료성분정보](https://www.data.go.kr/data/15111774/openapi.do) (성분 기본 정보)
+   - [식품의약품안전처_화장품 사용제한 원료정보](https://www.data.go.kr/data/15111772/openapi.do) (사용 제한/금지 여부)
+3. 승인 후 마이페이지에서 **일반 인증키 (Decoding)** 를 복사
+4. `.env` 파일의 `PUBLIC_DATA_API_KEY`에 설정 (2개 서비스 모두 동일 키 사용)
+
+> **참고**: 신규 발급 후 API가 실제로 활성화되기까지 최대 1~2시간이 소요될 수 있습니다.
+
+### 5. 서버 실행
+
+```bash
 uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 ```
-서버가 성공적으로 구동되면 브라우저에서 `http://localhost:8000/docs` 로 접속하여 API 문서를 확인할 수 있습니다.
 
-## 프로젝트 구조
+- API 문서 (Swagger UI): http://localhost:8000/docs
+- 헬스 체크: http://localhost:8000/health
 
-```
-agent/
-├── app/
-│   ├── api/              # API 엔드포인트
-│   │   └── routes/       # 라우트 정의
-│   ├── core/             # 설정 및 초기화
-│   │   └── config.py     # 설정 관리
-│   ├── models/           # 데이터 모델
-│   ├── services/         # 비즈니스 로직
-│   │   └── agent_service.py  # 에이전트 서비스
-│   ├── utils/            # 유틸리티 함수
-│   └── main.py           # FastAPI 앱 진입점
-├── tests/                # 테스트 코드
-├── pyproject.toml        # 프로젝트 설정 및 의존성
-└── README.md
+### 6. UI 연동 (선택)
+
+별도의 React UI 프로젝트와 함께 사용합니다.
+
+```bash
+cd ui
+npm install
+npm run dev    # http://localhost:5173
 ```
 
 ## API 엔드포인트
 
-- `GET /`: API 정보
-- `GET /health`: 헬스 체크
-- `POST /api/query/`: 자연어 쿼리 처리
+| Method | Path | 설명 | 요청 Body |
+|--------|------|------|-----------|
+| `GET` | `/` | API 정보 | - |
+| `GET` | `/health` | 헬스 체크 | - |
+| `POST` | `/api/v1/chat` | 채팅 (SSE 스트리밍) | `{ "thread_id": "uuid", "message": "질문" }` |
+| `GET` | `/api/v1/favorites/questions` | 즐겨찾기 질문 목록 | - |
+| `GET` | `/api/v1/threads` | 대화 목록 조회 | - |
+| `GET` | `/api/v1/threads/{thread_id}` | 대화 상세 조회 | - |
 
+### 채팅 API 사용 예시
+
+```bash
+curl -N -X POST http://localhost:8000/api/v1/chat \
+  -H "Content-Type: application/json" \
+  -d '{"thread_id": "3fa85f64-5717-4562-b3fc-2c963f66afa6", "message": "나이아신아마이드가 뭐야?"}'
+```
+
+## 대화 메모리
+
+`MemorySaver` (인메모리) 기반 체크포인터를 사용하여 동일한 `thread_id`의 대화 문맥을 유지합니다.
+
+- 같은 `thread_id`로 요청하면 이전 대화를 기억하고 맥락에 맞는 답변을 생성합니다.
+- 서버 재시작 시 대화 기록이 초기화됩니다.
+- 향후 `SqliteSaver` 또는 `PostgresSaver`로 교체하여 영구 저장이 가능합니다.
+
+## 프로젝트 구조
+
+```
+ai-agent/
+├── app/
+│   ├── main.py                         # FastAPI 앱 진입점, CORS, 미들웨어 설정
+│   ├── agents/
+│   │   ├── cosmetic_agent.py           # 에이전트 팩토리 (create_agent + middleware)
+│   │   ├── middleware.py               # @wrap_tool_call 에러 처리 middleware
+│   │   ├── prompts.py                  # 시스템 프롬프트 (도구 설명, 답변 규칙)
+│   │   └── tools.py                    # 2개 도구 정의 (공공데이터 API 호출)
+│   ├── api/
+│   │   └── routes/
+│   │       ├── chat.py                 # POST /api/v1/chat (SSE 스트리밍 응답)
+│   │       └── threads.py              # GET /api/v1/threads (대화 목록/상세 조회)
+│   ├── core/
+│   │   └── config.py                   # 환경 설정 (pydantic-settings, .env 로드)
+│   ├── models/
+│   │   ├── chat.py                     # ChatRequest / ChatResponse 모델
+│   │   └── threads.py                  # 대화 스레드 모델
+│   ├── services/
+│   │   ├── agent_service.py            # 에이전트 싱글턴 + SSE 스트리밍 + recursion_limit
+│   │   ├── conversation_service.py     # 대화 세션 관리
+│   │   └── threads_service.py          # 대화 목록 JSON 조회
+│   ├── data/                           # JSON 기반 스레드/즐겨찾기 데이터 저장소
+│   └── utils/
+│       ├── logger.py                   # 커스텀 로거 + @log_execution 데코레이터
+│       └── read_json.py                # JSON 파일 읽기 유틸리티
+├── tests/                              # pytest 테스트
+├── env.sample                          # 환경 변수 샘플
+├── pyproject.toml                      # 프로젝트 설정 및 의존성 (uv)
+└── README.md
+```
+
+### 주요 모듈 설명
+
+| 모듈 | 역할 |
+|------|------|
+| `agents/cosmetic_agent.py` | `create_agent()`로 ReAct 에이전트 생성. LLM + 도구 + 시스템 프롬프트 + `response_format=ChatResponse` + 체크포인터 + middleware 조합 |
+| `agents/middleware.py` | `@wrap_tool_call` 데코레이터로 도구 실행 예외를 일괄 처리. 타임아웃/네트워크/기타로 분류하여 ToolMessage 반환 |
+| `agents/tools.py` | 2개 `@tool` 함수 정의. `_call_api()` 공통 헬퍼로 API 호출. `raise_for_status()`로 HTTP 에러 감지, 이후 에러 처리는 middleware에 위임 |
+| `agents/prompts.py` | 화장품 성분 상담사 페르소나, 도구 사용 가이드, 성분 존재 여부 검증 규칙, 답변 규칙을 포함한 시스템 프롬프트 |
+| `services/agent_service.py` | 모듈 수준 싱글턴 에이전트. `MemorySaver` 체크포인터로 대화 기록 유지. `recursion_limit` 적용. `astream(stream_mode="updates")`으로 SSE 이벤트 변환 |
+| `api/routes/chat.py` | SSE `StreamingResponse` 생성. 초기 "Planning" 이벤트 전송 후 에이전트 스트림 연결 |
+
+## 질문 예시
+
+### 성분 정보 조회
+- "나이아신아마이드가 뭐야?"
+- "히알루론산이 어떤 효과가 있어?"
+- "레티놀이 뭔지 알려줘"
+
+### 성분 안전성 확인
+- "레티놀 써도 괜찮아?"
+- "파라벤 안전한 성분이야?"
+- "하이드로퀴논 사용 제한 있어?"
+
+### 복합 질문 (두 도구 모두 호출)
+- "하이드로퀴논이 뭔지, 써도 되는 성분인지 알려줘"
+- "요즘 비타민C 세럼이랑 레티놀 같이 쓰고 있는데 괜찮을까?"
+
+### 대화 문맥 유지 (연속 질문)
+- 1차: "나이아신아마이드에 대해 알려줘"
+- 2차: "그 성분 사용 제한은 없어?"
+
+## 주의사항
+
+- 모든 답변은 **일반적인 정보 제공**을 목적으로 하며, 전문 의료 상담을 대체하지 않습니다.
+- 피부 이상 반응이 있을 경우 **전문의 상담**을 권장합니다.
+- 공공데이터포털 API는 **일일 10,000건** 호출 제한이 있습니다.
+- `PUBLIC_DATA_API_KEY`는 필수 설정입니다. 미설정 시 서버가 시작되지 않습니다.
