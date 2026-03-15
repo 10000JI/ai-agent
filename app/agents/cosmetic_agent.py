@@ -33,7 +33,6 @@ def create_cosmetic_agent(checkpointer: MemorySaver):
         system_prompt=system_prompt,
         response_format=ChatResponse,
         checkpointer=checkpointer,
-        name="cosmetic_consultant",
         middleware=[handle_tool_errors],
     )
 
