@@ -6,7 +6,7 @@
 - Case 3: 단일 도구 호출 (성분 안전성 조회)
 - Case 4: 두 도구 모두 호출 (성분 정보 + 안전성)
 - Case 5: 멀티턴 대화 (문맥 유지)
-- Case 6: 존재하지 않는 성분 질문
+- Case 6: 미들웨어 에러 처리 (도구 타임아웃 시 대화 유지)
 - Case 7: ES 검색 — 성분 효능/작용 원리
 - Case 8: API + ES 도구 조합 (기본 정보 + 심화 정보)
 """
@@ -192,28 +192,42 @@ def test_case5_multiturn_context(client: TestClient):
 
 
 @pytest.mark.order(6)
-def test_case6_unknown_ingredient(client: TestClient):
+def test_case6_middleware_error_handling(client: TestClient, monkeypatch):
     """
-    Case 6: 존재하지 않는 성분 질문
-    사용자 질문: "ㅁㄴㅇㄹ 성분 안전해?"
-    기대: 도구 호출 후 "찾을 수 없다" 또는 "등록된 성분이 아니다" 류의 응답
+    Case 6: 미들웨어 에러 처리 — 도구 실행 중 예외 발생 시 대화가 깨지지 않는지 검증
+    사용자 질문: "나이아신아마이드가 뭐야?"
+    조건: search_ingredient가 TimeoutException을 던지도록 monkeypatch
+    기대: 미들웨어가 예외를 ToolMessage로 변환, 에이전트가 정상적으로 done 이벤트 반환
     """
+    import httpx
+    from app.agents import tools
+
+    original_call_api = tools._call_api
+
+    def raise_timeout(*args, **kwargs):
+        raise httpx.TimeoutException("API 응답 시간 초과 (테스트)")
+
+    # search_ingredient 호출 시 타임아웃 발생하도록 패치
+    monkeypatch.setattr(tools, "_call_api", raise_timeout)
+
     response = client.post(
         "/api/v1/chat",
         json={
             "thread_id": str(uuid.uuid4()),
-            "message": "ㅁㄴㅇㄹ 성분 안전해?"
+            "message": "나이아신아마이드가 뭐야?"
         }
     )
+
+    # 패치 복원
+    monkeypatch.setattr(tools, "_call_api", original_call_api)
 
     assert response.status_code == 200
 
     events = parse_sse_response(response.text)
-    tool_calls = get_tool_calls(events)
     done = get_done_event(events)
 
-    # 도구를 호출해서 확인 시도는 해야 함
-    assert len(tool_calls) > 0, "존재 여부 확인을 위해 도구 호출이 필요합니다"
+    # 에이전트가 크래시하지 않고 응답을 반환해야 함
+    assert done["role"] == "assistant"
     assert len(done["content"]) > 0
 
 
