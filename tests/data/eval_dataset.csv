@@ -1,0 +1,38 @@
+item_id,category,input,expected_tools,expected_keywords,expected_output,difficulty
+1,성분기본정보,나이아신아마이드가 뭐야?,search_ingredient,나이아신아마이드,나이아신아마이드의 표준명/영문명/정의를 포함한 답변,easy
+2,성분기본정보,레티놀이 뭔지 알려줘,search_ingredient,레티놀,레티놀의 기본 정보를 포함한 답변,easy
+3,성분기본정보,아데노신의 영문명이랑 CAS번호 알려줘,search_ingredient,아데노신,아데노신의 영문명과 CAS번호를 포함한 답변,easy
+4,성분기본정보,알부틴이 어떤 성분이야?,search_ingredient,알부틴,알부틴의 기원 및 정의를 포함한 답변,easy
+5,성분기본정보,판테놀이랑 판토텐산은 같은 거야?,search_ingredient,판테놀|판토텐산,판테놀과 판토텐산의 관계를 설명하는 답변,medium
+6,안전성확인,레티놀 써도 괜찮아?,search_ingredient|search_restricted_ingredient,레티놀|제한,레티놀의 사용 제한 여부를 포함한 답변,easy
+7,안전성확인,하이드로퀴논 사용 제한 있어?,search_ingredient|search_restricted_ingredient,하이드로퀴논|금지,하이드로퀴논의 금지/제한 정보를 포함한 답변,easy
+8,안전성확인,파라벤 안전한 성분이야?,search_ingredient|search_restricted_ingredient,파라벤,파라벤의 안전성 정보를 포함한 답변,easy
+9,안전성확인,트리클로산이 금지된 성분이야?,search_ingredient|search_restricted_ingredient,트리클로산,트리클로산의 규제 정보를 포함한 답변,medium
+10,안전성확인,살리실산 얼마나 들어가도 되는 거야?,search_ingredient|search_restricted_ingredient,살리실산|제한,살리실산의 배합 제한 조건을 포함한 답변,medium
+11,복합질문,하이드로퀴논이 뭔지 써도 되는 성분인지 알려줘,search_ingredient|search_restricted_ingredient,하이드로퀴논|금지,하이드로퀴논의 기본 정보와 규제 정보를 모두 포함한 답변,medium
+12,복합질문,알부틴 성분 정보랑 사용 제한 여부 둘 다 알려줘,search_ingredient|search_restricted_ingredient,알부틴,알부틴의 기본 정보와 안전성 정보를 모두 포함한 답변,medium
+13,효능작용원리,나이아신아마이드가 미백에 좋다는데 왜 그런 거야?,search_cosmetic_knowledge,멜라닌|미백,멜라닌 억제 등 미백 작용 메커니즘을 설명하는 답변,medium
+14,효능작용원리,레티놀이 주름개선에 어떻게 작용해?,search_cosmetic_knowledge,콜라겐|주름,콜라겐 합성 등 주름개선 원리를 설명하는 답변,medium
+15,효능작용원리,비타민C 유도체가 피부에 어떤 효과가 있어?,search_cosmetic_knowledge,항산화|비타민,항산화 등 비타민C의 피부 효과를 설명하는 답변,medium
+16,효능작용원리,AHA가 각질 제거에 효과적인 이유가 뭐야?,search_cosmetic_knowledge,각질|AHA,AHA의 각질 제거 메커니즘을 설명하는 답변,medium
+17,효능작용원리,세라마이드가 피부장벽에 중요한 이유 알려줘,search_cosmetic_knowledge,피부장벽|세라마이드,세라마이드의 피부장벽 강화 원리를 설명하는 답변,medium
+18,성분궁합,비타민C 세럼이랑 레티놀 같이 써도 돼?,search_cosmetic_knowledge,비타민C|레티놀,비타민C와 레티놀의 병용 가능 여부와 근거를 포함한 답변,medium
+19,성분궁합,AHA랑 레티놀 같이 써도 괜찮아?,search_cosmetic_knowledge,AHA|레티놀|자극,AHA와 레티놀 병용 시 자극 가능성을 설명하는 답변,medium
+20,성분궁합,나이아신아마이드랑 비타민C 같이 쓰면 안 좋다던데 진짜야?,search_cosmetic_knowledge,나이아신아마이드|비타민C,나이아신아마이드와 비타민C 병용에 대한 근거 기반 답변,hard
+21,피부타입,민감성 피부에 레티놀 괜찮아?,search_cosmetic_knowledge,민감|레티놀|자극,민감성 피부의 레티놀 사용 시 주의사항을 포함한 답변,medium
+22,피부타입,지성 피부에 좋은 보습 성분 뭐야?,search_cosmetic_knowledge,지성|보습,지성 피부에 적합한 보습 성분을 추천하는 답변,medium
+23,피부타입,건성 피부에 세라마이드 효과 있어?,search_cosmetic_knowledge,건성|세라마이드|보습,건성 피부에서의 세라마이드 효과를 설명하는 답변,medium
+24,API+ES조합,나이아신아마이드가 뭔지 그리고 왜 미백에 효과가 있는지 알려줘,search_ingredient|search_cosmetic_knowledge,나이아신아마이드|미백|멜라닌,기본 성분 정보와 미백 작용 원리를 모두 포함한 답변,hard
+25,API+ES조합,레티놀 사용 제한 있어? 그리고 주름에 어떻게 작용하는지도 알려줘,search_ingredient|search_restricted_ingredient|search_cosmetic_knowledge,레티놀|주름|콜라겐,규제 정보와 주름개선 메커니즘을 모두 포함한 답변,hard
+26,API+ES조합,알부틴이 뭔지 안전한지 그리고 미백 원리도 알고 싶어,search_ingredient|search_restricted_ingredient|search_cosmetic_knowledge,알부틴|미백,기본 정보와 안전성과 미백 원리를 모두 포함한 답변,hard
+27,도구없음,안녕하세요,,안녕,도구 호출 없이 인사에 대한 응답,easy
+28,도구없음,고마워 도움이 됐어,,감사,도구 호출 없이 감사 인사에 대한 응답,easy
+29,도구없음,오늘 서울 날씨 어때?,,화장품,화장품 범위 밖임을 안내하는 응답,easy
+30,도구없음,맛있는 파스타 레시피 알려줘,,화장품,화장품 범위 밖임을 안내하는 응답,easy
+31,엣지케이스,ㅁㄴㅇㄹ 성분 안전해?,search_ingredient,찾을 수 없,등록된 성분이 아님을 안내하는 응답,easy
+32,엣지케이스,히알루론산이 어떤 효과가 있어?,search_ingredient|search_cosmetic_knowledge,히알루론산|보습,히알루론산의 보습 효과를 설명하는 답변,medium
+33,엣지케이스,소듐하이알루로네이트랑 히알루론산 차이가 뭐야?,search_ingredient|search_cosmetic_knowledge,히알루론산,두 성분의 관계를 설명하는 답변,hard
+34,실사용시나리오,요즘 피부가 칙칙한데 어떤 성분 화장품을 써야 해?,search_cosmetic_knowledge,미백,미백 관련 성분을 추천하는 답변,medium
+35,실사용시나리오,여드름 자국이 잘 안 없어지는데 도움 되는 성분 있어?,search_cosmetic_knowledge,색소침착|미백,색소침착 관련 성분을 추천하는 답변,medium
+36,실사용시나리오,겨울에 피부가 너무 건조한데 뭘 발라야 해?,search_cosmetic_knowledge,보습|세라마이드,보습 관련 성분을 추천하는 답변,medium
+37,실사용시나리오,자외선차단제에 들어가는 성분 중 피부 자극 적은 게 뭐야?,search_cosmetic_knowledge,자외선차단|자극,물리적 자외선차단 성분을 설명하는 답변,hard
