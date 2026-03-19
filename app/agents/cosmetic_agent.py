@@ -4,16 +4,19 @@
 """
 
 from langchain.agents import create_agent
+from langchain_openai import ChatOpenAI
 from langgraph.checkpoint.memory import MemorySaver
 
 from app.agents.middleware import handle_tool_errors
 from app.agents.prompts import system_prompt
-from app.agents.tools import search_ingredient, search_restricted_ingredient
+from app.agents.tools import (
+    search_ingredient, search_restricted_ingredient, search_cosmetic_knowledge,
+)
 from app.core.config import settings
 from app.models.chat import ChatResponse
 from app.utils.logger import custom_logger
 
-COSMETIC_TOOLS = [search_ingredient, search_restricted_ingredient]
+COSMETIC_TOOLS = [search_ingredient, search_restricted_ingredient, search_cosmetic_knowledge]
 
 
 def create_cosmetic_agent(checkpointer: MemorySaver):
@@ -27,8 +30,15 @@ def create_cosmetic_agent(checkpointer: MemorySaver):
     """
     custom_logger.info("화장품 성분 상담 에이전트 생성 중...")
 
+    llm = ChatOpenAI(
+        model=settings.OPENAI_MODEL,
+        api_key=settings.OPENAI_API_KEY,
+        temperature=0,
+        streaming=True,
+    )
+
     agent = create_agent(
-        model=f"openai:{settings.OPENAI_MODEL}",
+        model=llm,
         tools=COSMETIC_TOOLS,
         system_prompt=system_prompt,
         response_format=ChatResponse,

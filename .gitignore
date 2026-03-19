@@ -161,3 +161,9 @@ cython_debug/
 
 # Brain / Artifacts
 .gemini/
+
+# 설계 문서 (개인용)
+docs/superpowers/
+
+# PDF 문서 (ES에 인덱싱됨)
+docs/pdfs/

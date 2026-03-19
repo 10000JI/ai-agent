@@ -13,9 +13,43 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
 
 
-# 체크포인터 & 에이전트를 모듈 수준에서 한 번만 생성
-# (checkpointer가 thread_id로 대화를 분리하므로 싱글턴으로 충분)
+# ============================================================
+# Opik 설정 (트레이싱)
+# ============================================================
+def _configure_opik():
+    import os
+
+    if settings.OPIK is None:
+        return
+
+    opik_settings = settings.OPIK
+    if opik_settings.URL_OVERRIDE:
+        os.environ["OPIK_URL_OVERRIDE"] = opik_settings.URL_OVERRIDE
+    if opik_settings.API_KEY:
+        os.environ["OPIK_API_KEY"] = opik_settings.API_KEY
+    if opik_settings.WORKSPACE:
+        os.environ["OPIK_WORKSPACE"] = opik_settings.WORKSPACE
+    if opik_settings.PROJECT:
+        os.environ["OPIK_PROJECT_NAME"] = opik_settings.PROJECT
+
+_configure_opik()
+
+if settings.OPIK:
+    from opik.integrations.langchain import OpikTracer
+    _opik_tracer = OpikTracer(project_name=settings.OPIK.PROJECT)
+else:
+    _opik_tracer = None
+
+# ============================================================
+# 체크포인터 설정 (대화 기록 유지)
+# 1안: MemorySaver (서버 재시작 시 초기화)
+# 2안 (추후): SqliteSaver로 교체 시 아래 주석 해제
+# from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+# _checkpointer = AsyncSqliteSaver.from_conn_string("chat_history.db")
+# ============================================================
 _checkpointer = MemorySaver()
+
+# 에이전트를 모듈 수준에서 한 번만 생성 (checkpointer가 thread_id로 대화 분리)
 _agent = create_cosmetic_agent(checkpointer=_checkpointer)
 
 
@@ -31,11 +65,13 @@ class AgentService:
         try:
             custom_logger.info(f"사용자 메시지: {user_messages}")
 
+            callbacks = [_opik_tracer] if _opik_tracer else []
             agent_stream = self.agent.astream(
                 {"messages": [HumanMessage(content=user_messages)]},
                 config={
                     "configurable": {"thread_id": str(thread_id)},
                     "recursion_limit": settings.DEEPAGENT_RECURSION_LIMIT,
+                    "callbacks": callbacks,
                 },
                 stream_mode="updates",
             )

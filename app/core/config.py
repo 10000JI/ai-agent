@@ -30,6 +30,12 @@ class Settings(BaseSettings):
     INGREDIENT_API_URL: str = "https://apis.data.go.kr/1471000/CsmtcsIngdCpntInfoService01/getCsmtcsIngdCpntInfoService01"
     RESTRICTED_INGREDIENT_API_URL: str = "https://apis.data.go.kr/1471000/CsmtcsUseRstrcInfoService/getCsmtcsUseRstrcInfoService"
 
+    # Elasticsearch 설정
+    ES_URL: str
+    ES_USERNAME: str
+    ES_PASSWORD: str
+    ES_INDEX: str
+
     # IMP: DeepAgents 라이브러리 실행 시 Graph 에이전트의 최대 재귀 호출 횟수(Recursion Limit) 설정
     # DeepAgents 설정
     DEEPAGENT_RECURSION_LIMIT: int = 20
