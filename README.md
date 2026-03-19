@@ -1,4 +1,4 @@
-# 화장품 성분 상담 AI 에이전트
+# 화장품 성분 상담 AI 에이전트 (Cosmetic Ingredient Advisor)
 
 LangChain + LangGraph 기반의 **화장품 성분 전문 AI 에이전트** 서버입니다.
 ReAct(Reasoning and Acting) 패턴을 활용하여 사용자의 화장품 성분 관련 질문에 대해 도구(Tool)를 자율적으로 선택하고 실행합니다.
